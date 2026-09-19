@@ -428,9 +428,10 @@ in it:
   connector through `${file:...}` indirections, so no credential is templated
   into the `Connector` resource or written to the Connect config topic in
   cleartext.
-- CI enforces it. The `validate-manifests` job greps the manifests for
-  credential patterns and fails the build on a match, so the fix cannot quietly
-  regress.
+- The property is cheap to enforce mechanically: grep the rendered manifests for
+  credential patterns and fail on a match. No pipeline is included here, but that
+  check is the thing to wire into whatever runs your reviews, so the fix cannot
+  quietly regress.
 
 The pod also runs as non-root with a read-only root filesystem and all
 capabilities dropped, and uses the `Recreate` strategy: two pods of the same
@@ -442,7 +443,6 @@ warehouse transaction.
 ```
 kafka-cdc-warehouse-sink/
 ├── .env.example                      Every environment variable, placeholders only
-├── .github/workflows/ci.yml          Lint, tests on 3.10-3.12, manifest validation, image build
 ├── deploy/
 │   ├── helm/cdc-connect/             Connect cluster + CDC source connector
 │   │   ├── Chart.yaml                Declares the upstream Confluent chart as a dependency
@@ -574,7 +574,7 @@ What is covered:
   Never derive a deployment from that file.
 - **Redshift compatibility is by construction, not by test.** The SQL avoids
   constructs Redshift lacks and the driver speaks the PostgreSQL wire protocol,
-  but CI only exercises PostgreSQL. The one PostgreSQL-specific fragment is the
+  but only PostgreSQL was actually exercised. The one PostgreSQL-specific fragment is the
   `generate_series` seed block in `warehouse_schema.sql`, which is for the local
   walkthrough only.
 - **The domain is generic on purpose.** Orders linked to customers is a stand-in.
