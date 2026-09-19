@@ -1,0 +1,176 @@
+---
+# Local end-to-end pipeline: Kafka, Schema Registry, a PostgreSQL instance
+# standing in for the analytical warehouse, and the sink itself.
+#
+# Everything here is plaintext and single-node on purpose. It is a development
+# harness, not a template for a deployment. The Kubernetes manifests under
+# deploy/ are the deployment reference.
+#
+#   docker compose up -d kafka schema-registry warehouse
+#   docker compose run --rm producer
+#   docker compose up sink
+#
+# ksqlDB is optional and lives behind a profile:
+#   docker compose --profile ksql up -d ksqldb
+
+name: kafka-cdc-warehouse-sink
+
+x-kafka-env: &kafka-env
+  KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+  KAFKA_SECURITY_PROTOCOL: PLAINTEXT
+  SCHEMA_REGISTRY_URL: http://schema-registry:8081
+
+services:
+  kafka:
+    image: confluentinc/cp-kafka:7.7.0
+    hostname: kafka
+    container_name: cdc-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      # Single-node KRaft: this container is both broker and controller.
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://kafka:29092,CONTROLLER://kafka:29093,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 3
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "kafka:29092"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.7.0
+    hostname: schema-registry
+    container_name: cdc-schema-registry
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR: 1
+      SCHEMA_REGISTRY_SCHEMA_COMPATIBILITY_LEVEL: backward
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8081/subjects"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  warehouse:
+    # Stands in for the analytical warehouse. Same wire protocol, same SQL subset.
+    image: postgres:16-alpine
+    hostname: warehouse
+    container_name: cdc-warehouse
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: warehouse
+      # Local-only development credentials. Nothing here is reused anywhere else.
+      POSTGRES_USER: warehouse
+      POSTGRES_PASSWORD: warehouse
+    volumes:
+      # Applied once, on an empty data directory.
+      - ./sql/warehouse_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U warehouse -d warehouse"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  producer:
+    # Emits synthetic Avro CDC events. Run it on demand, it is not a long-lived
+    # service:  docker compose run --rm producer
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cdc-producer
+    depends_on:
+      kafka:
+        condition: service_healthy
+      schema-registry:
+        condition: service_healthy
+    environment:
+      <<: *kafka-env
+      ENVIRONMENT: dev
+      CDC_TOPIC: cdc.dev.orders
+      EVENT_COUNT: "40"
+      DELETE_RATIO: "0.2"
+      AUTOMATIC_RATIO: "0.25"
+      PYTHONUNBUFFERED: "1"
+    command: ["python", "scripts/produce_sample_events.py"]
+
+  sink:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cdc-sink
+    depends_on:
+      kafka:
+        condition: service_healthy
+      schema-registry:
+        condition: service_healthy
+      warehouse:
+        condition: service_healthy
+    environment:
+      <<: *kafka-env
+      ENVIRONMENT: dev
+      LOG_LEVEL: INFO
+      CDC_TOPIC: cdc.dev.orders
+      CONSUMER_GROUP: cdc-warehouse-sink-local
+      BATCH_SIZE: "10"
+      POLL_TIMEOUT_SECONDS: "5"
+      SLEEP_INTERVAL_SECONDS: "5"
+      # Far shorter than the production defaults. A crashed member stays
+      # registered for session.timeout.ms, and 10 minutes of a stuck rebalance
+      # makes the walkthrough look broken.
+      KAFKA_SESSION_TIMEOUT_MS: "30000"
+      KAFKA_MAX_POLL_INTERVAL_MS: "120000"
+      WAREHOUSE_HOST: warehouse
+      WAREHOUSE_PORT: "5432"
+      WAREHOUSE_DATABASE: warehouse
+      WAREHOUSE_USER: warehouse
+      WAREHOUSE_PASSWORD: warehouse
+      PYTHONUNBUFFERED: "1"
+    restart: unless-stopped
+
+  ksqldb:
+    # Optional materialisation layer. Start it with --profile ksql.
+    image: confluentinc/cp-ksqldb-server:7.7.0
+    hostname: ksqldb
+    container_name: cdc-ksqldb
+    profiles: ["ksql"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+      schema-registry:
+        condition: service_healthy
+    ports:
+      - "8088:8088"
+    environment:
+      KSQL_LISTENERS: http://0.0.0.0:8088
+      KSQL_BOOTSTRAP_SERVERS: kafka:29092
+      KSQL_KSQL_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      KSQL_KSQL_SERVICE_ID: cdc-local
+      KSQL_KSQL_STREAMS_REPLICATION_FACTOR: 1
+      KSQL_KSQL_INTERNAL_TOPIC_REPLICAS: 1
+      KSQL_KSQL_LOGGING_PROCESSING_TOPIC_REPLICATION_FACTOR: 1
+      KSQL_AUTO_OFFSET_RESET: earliest
+    volumes:
+      - ./sql/ksql:/opt/ksql:ro

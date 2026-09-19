@@ -1,0 +1,87 @@
+---
+# Kafka Connect cluster that hosts the CDC source connector.
+#
+# The connector plugin is fetched on demand at build time rather than baked into
+# a custom image, which keeps the repository free of binaries.
+#
+# Every credential is referenced by secretRef. No username, password, JAAS
+# config or licence string appears in this chart or in its values file.
+apiVersion: platform.confluent.io/v1beta1
+kind: Connect
+metadata:
+  name: {{ .Values.connect.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cdc-connect.labels" . | nindent 4 }}
+    app.kubernetes.io/component: connect
+spec:
+  replicas: {{ .Values.connect.replicas }}
+  podTemplate:
+    resources:
+      requests:
+        cpu: {{ .Values.connect.resources.requests.cpu | quote }}
+        memory: {{ .Values.connect.resources.requests.memory | quote }}
+      limits:
+        cpu: {{ .Values.connect.resources.limits.cpu | quote }}
+        memory: {{ .Values.connect.resources.limits.memory | quote }}
+    {{- with .Values.connect.nodeSelector }}
+    nodeSelector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.connect.tolerations }}
+    tolerations:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  image:
+    application: {{ .Values.connect.image.application }}
+    init: {{ .Values.connect.image.init }}
+  build:
+    type: onDemand
+    onDemand:
+      plugins:
+        locationType: confluentHub
+        confluentHub:
+          {{- range .Values.connect.plugins }}
+          - name: {{ .name }}
+            owner: {{ .owner }}
+            version: {{ .version | quote }}
+          {{- end }}
+  keyConverterType: io.confluent.connect.avro.AvroConverter
+  valueConverterType: io.confluent.connect.avro.AvroConverter
+  configOverrides:
+    jvm:
+      {{- toYaml .Values.connect.jvmOverrides | nindent 6 }}
+    log4j:
+      {{- toYaml .Values.connect.log4jOverrides | nindent 6 }}
+  dependencies:
+    kafka:
+      bootstrapEndpoint: {{ .Values.kafka.bootstrapEndpoint | quote }}
+      {{- if .Values.kafka.authentication.enabled }}
+      authentication:
+        type: {{ .Values.kafka.authentication.type }}
+        jaasConfig:
+          # Secret must contain a plain.txt key holding the JAAS config.
+          secretRef: {{ .Values.kafka.authentication.secretRef }}
+      {{- end }}
+      tls:
+        enabled: {{ .Values.kafka.tls.enabled }}
+        ignoreTrustStoreConfig: {{ .Values.kafka.tls.ignoreTrustStoreConfig }}
+    schemaRegistry:
+      url: {{ .Values.schemaRegistry.url | quote }}
+      {{- if .Values.schemaRegistry.authentication.enabled }}
+      authentication:
+        type: basic
+        basic:
+          # Secret must contain a basic.txt key holding "user: password".
+          secretRef: {{ .Values.schemaRegistry.authentication.secretRef }}
+      {{- end }}
+  {{- with .Values.mountedSecrets }}
+  # Source database credentials are mounted, never templated into the connector
+  # configuration. The connector reads them through ${file:...} references.
+  mountedSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.licenseSecretRef }}
+  license:
+    secretRef: {{ . }}
+  {{- end }}

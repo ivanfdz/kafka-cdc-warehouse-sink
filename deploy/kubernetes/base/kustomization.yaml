@@ -1,0 +1,15 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# secret.example.yaml is deliberately NOT a resource. It documents the key names
+# the Deployment expects; the real Secret is created out of band.
+resources:
+  - configmap.yaml
+  - deployment.yaml
+
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: cdc-pipeline
+      app.kubernetes.io/managed-by: kustomize

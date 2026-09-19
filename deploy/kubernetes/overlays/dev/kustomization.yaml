@@ -1,0 +1,26 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: cdc-dev
+nameSuffix: -dev
+
+resources:
+  - ../../base
+
+images:
+  - name: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/cdc-warehouse-sink
+    newTag: "1.0.0"
+
+# Only non-sensitive values are patched here. Credentials stay in the Secret.
+configMapGenerator:
+  - name: cdc-warehouse-sink-config
+    behavior: merge
+    literals:
+      - ENVIRONMENT=dev
+      - LOG_LEVEL=DEBUG
+      - CDC_TOPIC=cdc.dev.orders
+      - BATCH_SIZE=100
+      - KAFKA_BOOTSTRAP_SERVERS=kafka-dev.example.internal:9092
+      - SCHEMA_REGISTRY_URL=https://schema-registry-dev.example.internal
+      - WAREHOUSE_HOST=warehouse-dev.example.internal

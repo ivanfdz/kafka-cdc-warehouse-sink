@@ -1,0 +1,38 @@
+---
+# Non-sensitive configuration only. Anything that authenticates belongs in the
+# Secret, never here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cdc-warehouse-sink-config
+  labels:
+    app.kubernetes.io/name: cdc-warehouse-sink
+data:
+  ENVIRONMENT: "dev"
+  LOG_LEVEL: "INFO"
+  PYTHONUNBUFFERED: "1"
+
+  KAFKA_BOOTSTRAP_SERVERS: "kafka.example.internal:9092"
+  KAFKA_SECURITY_PROTOCOL: "SASL_SSL"
+  KAFKA_SASL_MECHANISM: "PLAIN"
+  KAFKA_AUTO_OFFSET_RESET: "earliest"
+  KAFKA_MAX_POLL_INTERVAL_MS: "900000"
+  KAFKA_SESSION_TIMEOUT_MS: "600000"
+  KAFKA_HEARTBEAT_INTERVAL_MS: "3000"
+
+  SCHEMA_REGISTRY_URL: "https://schema-registry.example.internal"
+
+  CDC_TOPIC: "cdc.dev.orders"
+  CONSUMER_GROUP: "cdc-warehouse-sink"
+
+  BATCH_SIZE: "500"
+  POLL_TIMEOUT_SECONDS: "10"
+  SLEEP_INTERVAL_SECONDS: "5"
+  CATALOG_SOURCE_ID: "12"
+  DEFAULT_LINK_SCORE: "2"
+
+  WAREHOUSE_HOST: "warehouse.example.internal"
+  WAREHOUSE_PORT: "5439"
+  WAREHOUSE_DATABASE: "warehouse"
+  WAREHOUSE_SCHEMA: "public"
+  WAREHOUSE_CONNECT_TIMEOUT: "10"

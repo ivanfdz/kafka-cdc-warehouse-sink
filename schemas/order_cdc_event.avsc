@@ -1,0 +1,57 @@
+{
+  "type": "record",
+  "name": "OrderCdcEvent",
+  "namespace": "com.example.cdc.orders",
+  "doc": "A single row-level change captured from the operational orders table. Field names mirror the source columns; the op_* fields are added by the CDC connector.",
+  "fields": [
+    {
+      "name": "order_id",
+      "type": "string",
+      "doc": "Warehouse identifier of the order the change belongs to."
+    },
+    {
+      "name": "customer_ref",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "External customer code recorded on the order."
+    },
+    {
+      "name": "channel_id",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Sales channel the order came through."
+    },
+    {
+      "name": "status",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Order status at the time of the change."
+    },
+    {
+      "name": "event_date",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Business date of the change, ISO-8601 (YYYY-MM-DD)."
+    },
+    {
+      "name": "link_origin",
+      "type": "string",
+      "doc": "Who created the order-to-customer link: A for the automated resolution pipeline, M for a manual operator action."
+    },
+    {
+      "name": "op_type",
+      "type": "string",
+      "doc": "Change operation: I insert, U update, D delete. The connector emits updates as a D followed by an I."
+    },
+    {
+      "name": "op_ts",
+      "type": "long",
+      "doc": "Commit timestamp of the source transaction, epoch milliseconds."
+    },
+    {
+      "name": "current_ts",
+      "type": "long",
+      "doc": "Timestamp at which the connector captured the change, epoch milliseconds."
+    }
+  ]
+}

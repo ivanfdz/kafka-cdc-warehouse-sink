@@ -1,0 +1,70 @@
+# --- secrets and local configuration ---------------------------------------
+.env
+.env.*
+!.env.example
+*.env
+secret.yaml
+secrets.yaml
+secret*.yaml
+!secret.example.yaml
+values-dev.yaml
+values-prod.yaml
+!values.example.yaml
+credentials
+credentials.json
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+*.keytab
+
+# --- python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
+# --- virtual environments --------------------------------------------------
+venv/
+.venv/
+env/
+ENV/
+
+# --- build artifacts -------------------------------------------------------
+build/
+dist/
+sdist/
+wheels/
+*.egg-info/
+*.egg
+*.whl
+*.jar
+*.tgz
+*.zip
+*.tar.gz
+
+# --- helm ------------------------------------------------------------------
+charts/
+Chart.lock
+
+# --- editors and os --------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- logs ------------------------------------------------------------------
+*.log
+logs/

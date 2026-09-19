@@ -1,0 +1,99 @@
+---
+# One manifest for every environment. Nothing in here changes between dev and
+# production except the values in the ConfigMap and the Secret, both of which
+# are supplied by the overlay.
+#
+# No credential appears in this file. Every sensitive value is pulled from a
+# Secret with secretKeyRef, so the manifest is safe to commit and safe to render
+# into a pull request.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cdc-warehouse-sink
+  labels:
+    app.kubernetes.io/name: cdc-warehouse-sink
+    app.kubernetes.io/component: sink
+spec:
+  # A single replica per consumer group partition assignment is the safe default.
+  # Scale out by raising this to at most the partition count of the CDC topic.
+  replicas: 1
+  strategy:
+    # Recreate, not RollingUpdate: two pods of the same group briefly running
+    # together would trigger a rebalance in the middle of a warehouse
+    # transaction, which is avoidable churn for a sink that is not latency
+    # critical.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cdc-warehouse-sink
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cdc-warehouse-sink
+        app.kubernetes.io/component: sink
+    spec:
+      # Long enough for an in-flight batch to finish its warehouse transaction
+      # and commit offsets before the container is killed.
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: sink
+          image: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/cdc-warehouse-sink:1.0.0
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "cdc_sink"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+          envFrom:
+            # Non-sensitive configuration.
+            - configMapRef:
+                name: cdc-warehouse-sink-config
+          env:
+            # Sensitive configuration. Values live only in the Secret.
+            - name: KAFKA_SASL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: cdc-warehouse-sink-secrets
+                  key: kafka-sasl-username
+            - name: KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cdc-warehouse-sink-secrets
+                  key: kafka-sasl-password
+            - name: SCHEMA_REGISTRY_BASIC_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: cdc-warehouse-sink-secrets
+                  key: schema-registry-basic-auth
+            - name: WAREHOUSE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: cdc-warehouse-sink-secrets
+                  key: warehouse-user
+            - name: WAREHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cdc-warehouse-sink-secrets
+                  key: warehouse-password
+          volumeMounts:
+            # readOnlyRootFilesystem is on, so give the process a writable tmp.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

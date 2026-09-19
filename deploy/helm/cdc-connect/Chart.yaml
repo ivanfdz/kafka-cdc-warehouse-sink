@@ -1,0 +1,23 @@
+---
+apiVersion: v2
+name: cdc-connect
+description: >-
+  Kafka Connect cluster and CDC source connector that feed the warehouse sink.
+  Only the two custom resources are defined here; the operator and the custom
+  resource definitions come from the upstream Confluent for Kubernetes chart,
+  which is declared as a dependency rather than vendored into this repository.
+type: application
+version: 1.0.0
+appVersion: "7.7.0"
+maintainers:
+  - name: Ivan Fernandez Garcia
+
+dependencies:
+  # Installs the operator plus the platform.confluent.io CRDs (Connect,
+  # Connector and the rest). Disable it with
+  # confluent-for-kubernetes.enabled=false when the operator is already
+  # installed cluster-wide, which is the usual case in a shared cluster.
+  - name: confluent-for-kubernetes
+    version: "0.921.20"
+    repository: https://packages.confluent.io/helm
+    condition: confluent-for-kubernetes.enabled

@@ -1,0 +1,114 @@
+---
+# Reference values. Every host, endpoint and identifier here is a placeholder;
+# override them per environment with your own -f file, which .gitignore keeps
+# out of the repository.
+#
+# There is no credential in this file and there must never be one. Usernames,
+# passwords, JAAS strings, Schema Registry basic auth and the licence string are
+# all supplied as Kubernetes Secrets and referenced by name below.
+
+# Set to false when the Confluent operator and its CRDs are already installed in
+# the cluster, which is the common case.
+confluent-for-kubernetes:
+  enabled: false
+
+# Name of the Secret holding the Confluent licence, if a licensed connector is
+# used. Leave empty to run the connector in its evaluation mode.
+licenseSecretRef: ""
+
+connect:
+  name: cdc-connect
+  replicas: 3
+  image:
+    application: confluentinc/cp-server-connect:7.7.0
+    init: confluentinc/confluent-init-container:2.8.3
+  resources:
+    requests:
+      cpu: "2"
+      memory: 10Gi
+    limits:
+      cpu: "2"
+      memory: 10Gi
+  nodeSelector: {}
+  tolerations: []
+  # Fetched from Confluent Hub at build time. Swap for the connector that matches
+  # the source database.
+  plugins:
+    - name: kafka-connect-jdbc
+      owner: confluentinc
+      version: "10.7.6"
+  jvmOverrides:
+    - "-Xmx8G"
+    - "-Xms8G"
+    - "-XX:+UseContainerSupport"
+    - "-XX:MaxRAMPercentage=80.0"
+  log4jOverrides:
+    - "connect.log.pattern=[%d] %p %X{connector.context}%m (%c:%L)%n"
+    - "log4j.appender.stdout.layout.ConversionPattern=${connect.log.pattern}"
+
+kafka:
+  bootstrapEndpoint: "kafka.example.internal:9092"
+  authentication:
+    enabled: true
+    type: plain
+    # Secret with a plain.txt key holding the JAAS configuration.
+    secretRef: kafka-client-credentials
+  tls:
+    enabled: true
+    ignoreTrustStoreConfig: true
+
+schemaRegistry:
+  url: "https://schema-registry.example.internal"
+  authentication:
+    enabled: true
+    # Secret with a basic.txt key holding "user: password".
+    secretRef: schema-registry-credentials
+
+# Secrets mounted into the Connect pods. The connector configuration below reads
+# them with ${file:...} indirections so no value is stored in the Connector
+# resource or in the Connect config topic in cleartext.
+mountedSecrets:
+  - secretRef: source-database-credentials
+
+sourceConnector:
+  name: orders-cdc-source
+  class: io.confluent.connect.jdbc.JdbcSourceConnector
+  taskMax: 3
+  configs:
+    # --- source database -----------------------------------------------------
+    # The credentials come from the mounted Secret, not from this file.
+    connection.url: "jdbc:postgresql://source-db.example.internal:5432/operational"
+    connection.user: "${file:/mnt/secrets/source-database-credentials/database.properties:username}"
+    connection.password: "${file:/mnt/secrets/source-database-credentials/database.properties:password}"
+    connection.attempts: "3"
+    table.whitelist: "orders,order_lines,customers"
+    mode: "timestamp+incrementing"
+    timestamp.column.name: "updated_at"
+    incrementing.column.name: "id"
+    poll.interval.ms: "5000"
+    batch.max.rows: "5000"
+    numeric.mapping: "best_fit"
+
+    # --- topic naming --------------------------------------------------------
+    # Produces cdc.dev.orders, cdc.dev.order_lines and so on, which is exactly
+    # what CDC_TOPIC on the sink and the ksqlDB statements expect.
+    topic.prefix: "cdc.dev."
+    topic.creation.groups: "default"
+    topic.creation.default.partitions: "3"
+    topic.creation.default.replication.factor: "3"
+    topic.creation.default.cleanup.policy: "delete"
+    topic.creation.default.retention.ms: "1209600000"
+
+    # --- converters ----------------------------------------------------------
+    key.converter: "io.confluent.connect.avro.AvroConverter"
+    key.converter.schema.registry.url: "https://schema-registry.example.internal"
+    key.converter.basic.auth.credentials.source: "USER_INFO"
+    value.converter: "io.confluent.connect.avro.AvroConverter"
+    value.converter.schema.registry.url: "https://schema-registry.example.internal"
+    value.converter.basic.auth.credentials.source: "USER_INFO"
+
+    # --- heartbeat and pooling ----------------------------------------------
+    heartbeat.topic.name: "cdc.dev.heartbeat"
+    heartbeat.interval.ms: "300000"
+    connection.pool.max.size: "10"
+    connection.pool.inactive.timeout.ms: "60000"

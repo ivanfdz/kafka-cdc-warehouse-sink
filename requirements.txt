@@ -1,0 +1,8 @@
+# Runtime dependencies, pinned.
+#
+# The avro and schemaregistry extras pull in the Schema Registry client and the
+# Avro (de)serializers, which are no longer part of the base confluent-kafka
+# wheel.
+confluent-kafka[avro,schemaregistry]==2.15.1
+fastavro==1.12.2
+psycopg2-binary==2.9.13

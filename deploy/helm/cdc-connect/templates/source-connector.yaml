@@ -1,0 +1,26 @@
+---
+# The CDC source connector itself.
+#
+# Connector settings come straight from .Values.sourceConnector.configs so the
+# same template serves any JDBC or log-based CDC connector. Credentials are
+# expressed as ${file:...} indirections into the secrets mounted on the Connect
+# cluster, so no secret value is ever rendered into this resource.
+apiVersion: platform.confluent.io/v1beta1
+kind: Connector
+metadata:
+  name: {{ .Values.sourceConnector.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cdc-connect.labels" . | nindent 4 }}
+    app.kubernetes.io/component: source-connector
+spec:
+  class: {{ .Values.sourceConnector.class }}
+  taskMax: {{ .Values.sourceConnector.taskMax }}
+  connectClusterRef:
+    name: {{ .Values.connect.name }}
+  {{- with .Values.sourceConnector.configs }}
+  configs:
+    {{- range $key, $value := . }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+  {{- end }}
